@@ -6,6 +6,14 @@ A modern, full-stack data exploration application with a ChatGPT-like conversati
 
 Data Explorer transforms data analysis into natural conversations. Simply upload your data and chat with an AI assistant that understands your questions and provides instant insights with beautiful visualizations.
 
+## 🎬 Demo Video
+
+Watch the Data Explorer in action! See how easy it is to chat with your data and get instant insights.
+
+[![Data Explorer Demo](https://img.shields.io/badge/📹_Watch_Demo-Video-blue?style=for-the-badge)](https://drive.google.com/file/d/1_fb1xUvpnNzRT2sOxGNRoepcCA6XtdEu/view?usp=sharing)
+
+> **🎬 [Click here to watch the demo video](https://drive.google.com/file/d/1_fb1xUvpnNzRT2sOxGNRoepcCA6XtdEu/view?usp=sharing)**
+
 ## ✨ Key Features
 
 ### 🤖 **ChatGPT-like Interface**
