@@ -26,6 +26,14 @@ interface Suggestion {
   operation: Record<string, unknown>;
 }
 
+interface RecentSession {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  data_info: DataInfo | null;
+  conversation_count: number;
+}
+
 interface OperationResult {
   operation_type: string;
   operation_params: Record<string, unknown>;
@@ -41,7 +49,7 @@ interface DataExplorerContextType {
   conversationHistory: ConversationItem[];
   operationHistory: Record<string, unknown>[];
   lastOperation: OperationResult | null;
-  currentChart: string | null;
+  currentCharts: Record<string, string> | null;
   suggestions: Suggestion[];
   isLoading: boolean;
   isProcessing: boolean;
@@ -53,11 +61,12 @@ interface DataExplorerContextType {
   uploadFile: (file: File) => Promise<void>;
   processCommand: (command: string) => Promise<void>;
   applySuggestion: (suggestion: Suggestion) => Promise<void>;
-  generateChart: (config: Record<string, unknown>) => Promise<string | null>;
+  generateChart: (config: Record<string, unknown>) => Promise<Record<string, string> | null>;
   exportData: (format: string) => Promise<void>;
   resetSession: () => Promise<void>;
   clearConversation: () => void;
   clearError: () => void;
+  getRecentSessions: () => Promise<RecentSession[]>;
 }
 
 const DataExplorerContext = createContext<DataExplorerContextType | undefined>(undefined);
@@ -69,7 +78,7 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
   const [conversationHistory, setConversationHistory] = useState<ConversationItem[]>([]);
   const [operationHistory, setOperationHistory] = useState<Record<string, unknown>[]>([]);
   const [lastOperation, setLastOperation] = useState<OperationResult | null>(null);
-  const [currentChart, setCurrentChart] = useState<string | null>(null);
+  const [currentCharts, setCurrentCharts] = useState<Record<string, string> | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -114,9 +123,19 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
   }, [sessionId, createSession]);
 
   const uploadFile = useCallback(async (file: File) => {
-    if (!sessionId) {
+    let currentSessionId = sessionId;
+    
+    if (!currentSessionId) {
+      console.log('No session available, creating new session...');
       await createSession();
-      return;
+      // Wait for session to be created
+      await new Promise(resolve => setTimeout(resolve, 100));
+      currentSessionId = sessionId;
+      
+      if (!currentSessionId) {
+        setError('Failed to create session. Please try again.');
+        return;
+      }
     }
 
     try {
@@ -126,7 +145,7 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
       const formData = new FormData();
       formData.append('file', file);
       
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/upload`, {
+      const response = await fetch(`${API_BASE_URL}/sessions/${currentSessionId}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -202,19 +221,27 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
   }, [sessionId, createSession]);
 
   const processCommand = useCallback(async (command: string) => {
-    if (!sessionId) {
+    let currentSessionId = sessionId;
+    
+    if (!currentSessionId) {
       console.log('No session available, creating new session...');
       await createSession();
-      setError('No session available. Please upload your data again.');
-      return;
+      // Wait a moment for the session to be created
+      await new Promise(resolve => setTimeout(resolve, 100));
+      currentSessionId = sessionId;
+      
+      if (!currentSessionId) {
+        setError('Failed to create session. Please try again.');
+        return;
+      }
     }
 
     try {
       setIsProcessing(true);
       setError(null);
       
-      console.log('Processing command:', command, 'with session:', sessionId);
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/command`, {
+      console.log('Processing command:', command, 'with session:', currentSessionId);
+      const response = await fetch(`${API_BASE_URL}/sessions/${currentSessionId}/command`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -224,11 +251,59 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
       
       if (!response.ok) {
         if (response.status === 404) {
-          // Session not found, create a new one
+          // Session not found, create a new one and retry
           console.log('Session expired, creating new session...');
           await createSession();
+          // Wait for session to be created
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const newSessionId = sessionId;
+          
+          if (newSessionId) {
+            // Retry with new session
+            const retryResponse = await fetch(`${API_BASE_URL}/sessions/${newSessionId}/command`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ command }),
+            });
+            
+            if (retryResponse.ok) {
+              const retryData = await retryResponse.json();
+              console.log('Retry API Response:', retryData);
+              
+              if (retryData.success) {
+                setCurrentData(retryData.data);
+                setLastOperation({
+                  operation_type: retryData.operation_type,
+                  operation_params: retryData.operation_params,
+                  confidence: retryData.confidence,
+                  ai_explanation: retryData.ai_explanation,
+                  suggestions: retryData.suggestions || []
+                });
+                setSuggestions(retryData.suggestions || []);
+                
+                // Add to conversation history
+                setConversationHistory(prev => [...prev, {
+                  user_command: command,
+                  ai_explanation: retryData.ai_explanation,
+                  timestamp: new Date().toISOString(),
+                  operation_type: retryData.operation_type
+                }]);
+              }
+              return;
+            }
+          }
+          
           setError('Session expired. Please upload your data file again to continue the conversation.');
           return;
+        } else if (response.status === 400) {
+          // No data loaded error
+          const errorData = await response.json();
+          if (errorData.detail === 'No data loaded') {
+            setError('Please upload a CSV file first before making queries. Use the file upload area at the top of the page.');
+            return;
+          }
         }
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to process command');
@@ -264,7 +339,12 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
           return updated;
         });
         
-        // Generate chart if requested
+        // Set charts if provided in response
+        if (data.charts) {
+          setCurrentCharts(data.charts);
+        }
+        
+        // Generate chart if requested via chart_config
         if (data.chart_config) {
           try {
             const chartResponse = await fetch(`${API_BASE_URL}/sessions/${sessionId}/chart`, {
@@ -277,7 +357,7 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
             
             if (chartResponse.ok) {
               const chartData = await chartResponse.json();
-              setCurrentChart(chartData.chart);
+              setCurrentCharts({ [chartData.chart_type || 'bar']: chartData.chart });
             }
           } catch (chartErr) {
             console.warn('Failed to generate chart:', chartErr);
@@ -317,7 +397,7 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
       }
       
       const data = await response.json();
-      return data.chart;
+      return data.charts || { [data.chart_type || 'bar']: data.chart };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate chart');
       return null;
@@ -400,16 +480,26 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
   }, [sessionId]);
 
   const applySuggestion = useCallback(async (suggestion: Suggestion) => {
-    if (!sessionId) {
-      setError('No session available');
-      return;
+    let currentSessionId = sessionId;
+    
+    if (!currentSessionId) {
+      console.log('No session available, creating new session...');
+      await createSession();
+      // Wait for session to be created
+      await new Promise(resolve => setTimeout(resolve, 100));
+      currentSessionId = sessionId;
+      
+      if (!currentSessionId) {
+        setError('Failed to create session. Please try again.');
+        return;
+      }
     }
 
     try {
       setIsProcessing(true);
       setError(null);
       
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/apply-suggestion`, {
+      const response = await fetch(`${API_BASE_URL}/sessions/${currentSessionId}/apply-suggestion`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -423,6 +513,13 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
           await createSession();
           setError('Session expired. Please upload your data again.');
           return;
+        } else if (response.status === 400) {
+          // No data loaded error
+          const errorData = await response.json();
+          if (errorData.detail === 'No data loaded') {
+            setError('Please upload a CSV file first before applying suggestions. Use the file upload area at the top of the page.');
+            return;
+          }
         }
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to apply suggestion');
@@ -459,6 +556,19 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
     setError(null);
   }, []);
 
+  const getRecentSessions = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/sessions/recent`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.sessions;
+      }
+    } catch (err) {
+      console.error('Error fetching recent sessions:', err);
+    }
+    return [];
+  }, []);
+
   const value: DataExplorerContextType = {
     sessionId,
     dataInfo,
@@ -466,7 +576,7 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
     conversationHistory,
     operationHistory,
     lastOperation,
-    currentChart,
+    currentCharts,
     suggestions,
     isLoading,
     isProcessing,
@@ -481,6 +591,7 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
     resetSession,
     clearConversation,
     clearError,
+    getRecentSessions,
   };
 
   return (

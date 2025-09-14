@@ -14,6 +14,7 @@ from datetime import datetime
 from operations import DataOperations
 from conversational_ai import ConversationalAI
 from chart_generator import ChartGenerator
+from database import db_manager
 
 app = FastAPI(title="Data Explorer API", version="1.0.0")
 
@@ -26,34 +27,94 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage for sessions (in production, use Redis or database)
-sessions = {}
-
+# Database-backed session management
 class SessionManager:
     def __init__(self):
-        self.sessions = {}
+        self.chart_generator = ChartGenerator()
+        self._sessions = {}  # In-memory session cache
     
     def create_session(self) -> str:
-        session_id = str(uuid.uuid4())
-        self.sessions[session_id] = {
-            "data_ops": None,
-            "conversational_ai": None,
-            "chart_generator": ChartGenerator(),
-            "conversation_history": [],
-            "operation_history": [],
-            "current_view": None,
-            "created_at": datetime.now()
-        }
-        return session_id
+        """Create a new session using database"""
+        return db_manager.create_session()
     
     def get_session(self, session_id: str) -> Dict[str, Any]:
-        if session_id not in self.sessions:
+        """Get session from database and cache"""
+        # Check in-memory cache first
+        if session_id in self._sessions:
+            return self._sessions[session_id]
+        
+        # Get from database
+        session_data = db_manager.get_session(session_id)
+        if not session_data:
             raise HTTPException(status_code=404, detail="Session not found")
-        return self.sessions[session_id]
+        
+        # Add runtime components
+        data_ops = None
+        conversational_ai = None
+        
+        # Recreate data_ops and conversational_ai if data is available
+        if session_data.get('data_info') and session_data.get('current_data'):
+            try:
+                # Convert current_data back to DataFrame
+                df = pd.DataFrame(session_data['current_data'])
+                data_ops = DataOperations(df)
+                conversational_ai = ConversationalAI(session_data['data_info'])
+            except Exception as e:
+                print(f"Warning: Failed to recreate data objects: {e}")
+        
+        session_data.update({
+            "data_ops": data_ops,
+            "conversational_ai": conversational_ai,
+            "chart_generator": self.chart_generator,
+            "conversation_history": db_manager.get_conversation_history(session_id),
+            "operation_history": [],
+            "current_view": session_data.get('current_data')
+        })
+        
+        # Cache the session
+        self._sessions[session_id] = session_data
+        return session_data
     
     def update_session(self, session_id: str, updates: Dict[str, Any]):
-        if session_id in self.sessions:
-            self.sessions[session_id].update(updates)
+        """Update session in database and cache"""
+        session_data = db_manager.get_session(session_id)
+        if not session_data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Update database with new data
+        data_info = updates.get('data_info')
+        current_data = updates.get('current_data')
+        
+        if data_info or current_data:
+            db_manager.update_session_data(session_id, data_info, current_data)
+        
+        # Update in-memory cache
+        if session_id in self._sessions:
+            # Update the cached session with new data
+            if 'data_ops' in updates:
+                self._sessions[session_id]['data_ops'] = updates['data_ops']
+            if 'conversational_ai' in updates:
+                self._sessions[session_id]['conversational_ai'] = updates['conversational_ai']
+            if 'current_view' in updates:
+                self._sessions[session_id]['current_view'] = updates['current_view']
+            if 'conversation_history' in updates:
+                self._sessions[session_id]['conversation_history'] = updates['conversation_history']
+            if 'operation_history' in updates:
+                self._sessions[session_id]['operation_history'] = updates['operation_history']
+        
+        # Store conversation if provided
+        if 'conversation_history' in updates:
+            conversation = updates['conversation_history'][-1] if updates['conversation_history'] else None
+            if conversation:
+                db_manager.add_conversation(
+                    session_id=session_id,
+                    user_command=conversation.get('user_command', ''),
+                    ai_response=conversation.get('ai_response', ''),
+                    operation_type=conversation.get('operation_type'),
+                    operation_params=conversation.get('operation_params'),
+                    confidence=conversation.get('confidence'),
+                    suggestions=conversation.get('suggestions')
+                )
 
 session_manager = SessionManager()
 
@@ -93,13 +154,18 @@ async def upload_file(session_id: str, file: UploadFile = File(...)):
         data_ops = DataOperations(df)
         conversational_ai = ConversationalAI(data_ops.get_data_info())
         
+        # Get data info
+        data_info = data_ops.get_data_info()
+        
         # Update session
         session_manager.update_session(session_id, {
             "data_ops": data_ops,
             "conversational_ai": conversational_ai,
             "current_view": df.to_dict('records'),
             "conversation_history": [],
-            "operation_history": []
+            "operation_history": [],
+            "data_info": data_info,
+            "current_data": df.to_dict('records')
         })
         
         return {
@@ -144,7 +210,7 @@ async def process_command(session_id: str, command_data: Dict[str, str]):
         # Execute operation if valid
         if result.get("operation_type"):
             operation_params = result["operation_params"]
-            operation_type = result["operation_type"]
+            operation_type = result["operation_type"].lower()
             
             # Execute the operation
             if operation_type == 'top_n':
@@ -160,24 +226,74 @@ async def process_command(session_id: str, command_data: Dict[str, str]):
             else:
                 df_result = session["data_ops"].df
             
-            # Update session
+            # Update the data_ops object with the new result for context persistence
+            session["data_ops"].df = df_result
+            
+            # Generate multiple chart types for comprehensive visualization
+            charts = {}
+            if operation_type in ['top_n', 'group_aggregate', 'pivot'] and not df_result.empty:
+                try:
+                    # Use LLM to determine optimal chart configuration
+                    chart_config = session["conversational_ai"].suggest_chart_config(
+                        operation_type, operation_params, df_result
+                    )
+                    
+                    # Generate multiple chart types
+                    chart_types = ['bar', 'line', 'scatter', 'pie', 'histogram', 'box']
+                    for chart_type in chart_types:
+                        try:
+                            chart = session["chart_generator"].generate_chart(
+                                df_result,
+                                chart_type=chart_type,
+                                x_col=chart_config.get('x_col'),
+                                y_col=chart_config.get('y_col'),
+                                color_col=chart_config.get('color_col'),
+                                title=f"{chart_config.get('title', f'{operation_type.replace('_', ' ').title()} Analysis')} - {chart_type.title()}"
+                            )
+                            charts[chart_type] = chart.to_json()
+                        except Exception as chart_error:
+                            print(f"Failed to generate {chart_type} chart: {chart_error}")
+                            continue
+                except Exception as e:
+                    print(f"Chart generation failed: {e}")
+                    charts = {}
+            
+            # Enhance explanation with actual data context
+            enhanced_explanation = session["conversational_ai"].enhance_explanation_with_data_context(
+                result.get('ai_explanation', result.get('explanation', '')),
+                operation_type,
+                operation_params,
+                df_result,
+                command
+            )
+            
+            # Update session with new data
+            current_data = df_result.to_dict('records')
             session_manager.update_session(session_id, {
-                "current_view": df_result.to_dict('records'),
+                "current_data": current_data,
                 "operation_history": session["data_ops"].operation_history,
                 "conversation_history": session["conversation_history"] + [{
-                    "user": command,
-                    "ai": result.get('ai_explanation', result.get('explanation', '')),
-                    "operation": result.get('operation_type')
+                    "user_command": command,
+                    "ai_explanation": enhanced_explanation,
+                    "operation_type": result.get('operation_type'),
+                    "operation_params": operation_params,
+                    "confidence": result.get('confidence'),
+                    "suggestions": result.get('suggestions', [])
                 }]
             })
+            
+            # Update the session's data_ops and conversational_ai for next query
+            session["data_ops"] = session["data_ops"]  # Already updated above
+            session["conversational_ai"] = ConversationalAI(session["data_ops"].get_data_info())
             
             return {
                 "success": True,
                 "operation_type": operation_type,
-                "ai_explanation": result.get('ai_explanation', result.get('explanation', '')),
+                "ai_explanation": enhanced_explanation,
                 "data": df_result.to_dict('records'),
                 "shape": df_result.shape,
-                "suggestions": result.get('suggestions', [])
+                "suggestions": result.get('suggestions', []),
+                "charts": charts
             }
         else:
             # Return suggestions for unclear commands
@@ -268,6 +384,18 @@ async def get_conversation_history(session_id: str):
     """Get conversation history"""
     session = session_manager.get_session(session_id)
     return {"conversation": session["conversation_history"]}
+
+@app.get("/sessions/recent")
+async def get_recent_sessions(limit: int = 10):
+    """Get recent sessions for sidebar display"""
+    sessions = db_manager.get_recent_sessions(limit)
+    return {"sessions": sessions}
+
+@app.get("/sessions/stats")
+async def get_session_stats():
+    """Get database statistics"""
+    stats = db_manager.get_session_stats()
+    return stats
 
 @app.post("/sessions/{session_id}/reset")
 async def reset_session(session_id: str):

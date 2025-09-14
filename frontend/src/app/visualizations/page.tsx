@@ -6,8 +6,6 @@ import { BarChart3, PieChart, BarChart, TrendingUp, Table, Download, ArrowLeft, 
 export const dynamic = 'force-dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useDataExplorer } from '@/context/DataExplorerContext';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
@@ -311,69 +309,79 @@ function ChartComponent({
 
 // Data Table Component
 function DataTable({ data, title }: { data: DataRow[]; title: string }) {
-  if (data.length === 0) {
+  if (!data || data.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle className="flex items-center">
+            <Table className="h-5 w-5 mr-2" />
+            {title}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-64 flex items-center justify-center">
-            <div className="text-muted-foreground">No data available</div>
-          </div>
+          <p className="text-muted-foreground">No data available</p>
         </CardContent>
       </Card>
     );
   }
 
   const columns = Object.keys(data[0]);
-  const displayData = data.slice(0, 100); // Show first 100 rows
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
-          {title}
-          <Badge variant="outline">
-            {data.length} rows
-          </Badge>
+          <div className="flex items-center">
+            <Table className="h-5 w-5 mr-2" />
+            {title}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {data.length.toLocaleString()} rows × {columns.length} columns
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-64">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  {columns.map((col) => (
-                    <th key={col} className="text-left p-2 font-medium">
-                      {col.replace(/_/g, ' ').toUpperCase()}
+        <div className="overflow-auto max-h-[600px] w-full border rounded-lg">
+          <div className="w-full">
+            <table className="w-full text-sm table-fixed">
+              <thead className="bg-muted/30 sticky top-0 z-10">
+                <tr>
+                  {columns.slice(0, 8).map((column) => (
+                    <th key={column} className="px-2 py-2 text-left font-medium text-muted-foreground truncate" style={{ width: `${100/Math.min(8, columns.length)}%` }}>
+                      {column}
                     </th>
                   ))}
+                  {columns.length > 8 && (
+                    <th className="px-2 py-2 text-left font-medium text-muted-foreground" style={{ width: `${100/Math.min(8, columns.length)}%` }}>
+                      +{columns.length - 8} more
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {displayData.map((row, index) => (
-                  <tr key={index} className="border-b hover:bg-muted/50">
-                    {columns.map((col) => (
-                      <td key={col} className="p-2">
-                        {typeof row[col] === 'number' 
-                          ? (row[col] as number).toLocaleString()
-                          : String(row[col] || '')
-                        }
+                {data.map((row, index) => (
+                  <tr key={index} className="border-b hover:bg-muted/20">
+                    {columns.slice(0, 8).map((column) => (
+                      <td key={column} className="px-2 py-2 truncate text-xs" style={{ width: `${100/Math.min(8, columns.length)}%` }} title={String(row[column])}>
+                        {String(row[column])}
                       </td>
                     ))}
+                    {columns.length > 8 && (
+                      <td className="px-2 py-2 text-muted-foreground text-xs" style={{ width: `${100/Math.min(8, columns.length)}%` }}>
+                        ...
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
+            {columns.length > 8 && (
+              <div className="p-2 text-center text-xs text-muted-foreground border-t bg-muted/20">
+                Showing first 8 of {columns.length} columns • Use horizontal scroll to see more
+              </div>
+            )}
           </div>
-          {data.length > 100 && (
-            <div className="text-center mt-2 text-sm text-muted-foreground">
-              Showing first 100 of {data.length} rows
-            </div>
-          )}
-        </ScrollArea>
+        </div>
       </CardContent>
     </Card>
   );

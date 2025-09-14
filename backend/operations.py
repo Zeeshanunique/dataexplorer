@@ -150,7 +150,7 @@ class DataOperations:
         return {
             "shape": self.df.shape,
             "columns": list(self.df.columns),
-            "dtypes": self.df.dtypes.to_dict(),
+            "dtypes": {col: str(dtype) for col, dtype in self.df.dtypes.to_dict().items()},
             "null_counts": self.df.isnull().sum().to_dict(),
             "numeric_columns": self.df.select_dtypes(include=[np.number]).columns.tolist(),
             "categorical_columns": self.df.select_dtypes(include=['object', 'category']).columns.tolist(),

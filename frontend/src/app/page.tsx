@@ -1,9 +1,13 @@
 'use client';
 
 import { Upload, BarChart3, Send, Bot, User, Trash2, Download as DownloadIcon, Menu, X, History, Image, Plus, BarChart } from 'lucide-react';
+import dynamicImport from 'next/dynamic';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
+
+// Dynamically import Plot component to avoid SSR issues
+const Plot = dynamicImport(() => import('react-plotly.js'), { ssr: false });
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,13 +19,14 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
 // Chat Message Component
-function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClick, data }: {
+function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClick, data, charts }: {
   message: string;
   isUser: boolean;
   timestamp: string;
   suggestions?: Array<{ type: string; description: string; operation: Record<string, unknown> }>;
   onSuggestionClick?: (suggestion: { type: string; description: string; operation: Record<string, unknown> }) => void;
   data?: Record<string, unknown>[];
+  charts?: Record<string, string>;
 }) {
   return (
     <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'} mb-6`}>
@@ -43,45 +48,131 @@ function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClic
                     {/* Data Display */}
                     {!isUser && data && data.length > 0 && (
                       <div className="mt-3 bg-background border rounded-lg overflow-hidden">
-                        <div className="p-3 border-b bg-muted/50">
-                          <p className="text-sm font-medium">Results ({data.length} rows)</p>
+                        <div className="p-3 border-b bg-muted/50 flex items-center justify-between">
+                          <p className="text-sm font-medium">Results ({data.length.toLocaleString()} rows)</p>
+                          <div className="flex items-center gap-2">
+                            <div className="text-xs text-muted-foreground">
+                              {Object.keys(data[0]).length} columns
+                            </div>
+                            {(data.length > 20 || Object.keys(data[0]).length > 6) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-xs"
+                                onClick={() => {
+                                  // Navigate to visualizations page for full data view
+                                  window.open('/visualizations', '_blank');
+                                }}
+                              >
+                                View Full Data
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                        <div className="max-h-96 overflow-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-muted/30 sticky top-0">
-                              <tr>
-                                {Object.keys(data[0]).slice(0, 8).map((key) => (
-                                  <th key={key} className="px-3 py-2 text-left font-medium text-muted-foreground">
-                                    {key}
-                                  </th>
-                                ))}
-                                {Object.keys(data[0]).length > 8 && (
-                                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">
-                                    ...
-                                  </th>
-                                )}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {data.slice(0, 10).map((row, index) => (
-                                <tr key={index} className="border-b hover:bg-muted/20">
-                                  {Object.keys(row).slice(0, 8).map((key) => (
-                                    <td key={key} className="px-3 py-2 max-w-[200px] truncate" title={String(row[key])}>
-                                      {String(row[key])}
-                                    </td>
+                        <div className="overflow-auto max-h-[400px] max-w-full">
+                          <div className="w-full">
+                            <table className="w-full text-sm table-fixed">
+                              <thead className="bg-muted/30 sticky top-0 z-10">
+                                <tr>
+                                  {Object.keys(data[0]).slice(0, 6).map((key) => (
+                                    <th key={key} className="px-2 py-2 text-left font-medium text-muted-foreground truncate" style={{ width: `${100/Object.keys(data[0]).slice(0, 6).length}%` }}>
+                                      {key}
+                                    </th>
                                   ))}
-                                  {Object.keys(row).length > 8 && (
-                                    <td className="px-3 py-2 text-muted-foreground">
-                                      ...
-                                    </td>
+                                  {Object.keys(data[0]).length > 6 && (
+                                    <th className="px-2 py-2 text-left font-medium text-muted-foreground" style={{ width: `${100/Object.keys(data[0]).slice(0, 6).length}%` }}>
+                                      +{Object.keys(data[0]).length - 6} more
+                                    </th>
                                   )}
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {data.length > 10 && (
-                            <div className="p-2 text-center text-xs text-muted-foreground border-t">
-                              Showing first 10 of {data.length} rows
+                              </thead>
+                              <tbody>
+                                {data.slice(0, 20).map((row, index) => (
+                                  <tr key={index} className="border-b hover:bg-muted/20">
+                                    {Object.keys(row).slice(0, 6).map((key) => (
+                                      <td key={key} className="px-2 py-2 truncate text-xs" style={{ width: `${100/Object.keys(data[0]).slice(0, 6).length}%` }} title={String(row[key])}>
+                                        {String(row[key])}
+                                      </td>
+                                    ))}
+                                    {Object.keys(data[0]).length > 6 && (
+                                      <td className="px-2 py-2 text-muted-foreground text-xs" style={{ width: `${100/Object.keys(data[0]).slice(0, 6).length}%` }}>
+                                        ...
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {data.length > 20 && (
+                              <div className="p-2 text-center text-xs text-muted-foreground border-t bg-muted/20">
+                                Showing first 20 of {data.length} rows • {Object.keys(data[0]).length > 6 && `First 6 of ${Object.keys(data[0]).length} columns`}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Charts Display */}
+                    {!isUser && charts && Object.keys(charts).length > 0 && (
+                      <div className="mt-3 bg-background border rounded-lg overflow-hidden">
+                        <div className="p-3 border-b bg-muted/50 flex items-center justify-between">
+                          <p className="text-sm font-medium">Data Visualizations</p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-xs"
+                              onClick={() => {
+                                // Navigate to visualizations page for full chart view
+                                window.open('/visualizations', '_blank');
+                              }}
+                            >
+                              <BarChart className="h-3 w-3 mr-1" />
+                              View All Charts
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="p-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {Object.entries(charts).slice(0, 4).map(([chartType, chartData]) => (
+                              <div key={chartType} className="bg-muted/20 rounded-lg p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <h4 className="text-sm font-medium capitalize">{chartType} Chart</h4>
+                                </div>
+                                <div className="w-full h-48">
+                                  <Plot
+                                    data={JSON.parse(chartData).data}
+                                    layout={{
+                                      ...JSON.parse(chartData).layout,
+                                      autosize: true,
+                                      margin: { l: 30, r: 30, t: 30, b: 30 },
+                                      height: 200,
+                                      showlegend: false
+                                    }}
+                                    config={{
+                                      displayModeBar: false,
+                                      responsive: true
+                                    }}
+                                    style={{ width: '100%', height: '100%' }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {Object.keys(charts).length > 4 && (
+                            <div className="mt-3 text-center">
+                              <p className="text-xs text-muted-foreground">
+                                Showing 4 of {Object.keys(charts).length} chart types. 
+                                <Button
+                                  variant="link"
+                                  size="sm"
+                                  className="h-auto p-0 ml-1 text-xs"
+                                  onClick={() => window.open('/visualizations', '_blank')}
+                                >
+                                  View all charts
+                                </Button>
+                              </p>
                             </div>
                           )}
                         </div>
@@ -155,36 +246,33 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
       {/* Overlay for mobile */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
           onClick={onClose}
         />
       )}
       
       {/* Sidebar */}
       <div className={`
-        fixed lg:static inset-y-0 left-0 z-50 w-80 bg-background border-r
+        fixed inset-y-0 left-0 z-40 w-80 bg-background border-r
         transform transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         flex flex-col
+        lg:translate-x-0 lg:static
+        top-16
       `}>
-        {/* Sidebar Header */}
-        <div className="p-4 border-b">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Data Explorer</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="lg:hidden"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
         {/* Sidebar Content */}
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-6">
+            {/* Close button for mobile */}
+            <div className="lg:hidden flex justify-end mb-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
             {/* New Chat Button */}
             <Button
               onClick={() => {
@@ -322,6 +410,7 @@ function AppContent() {
   const { 
     dataInfo, 
     currentData,
+    currentCharts,
     conversationHistory, 
     processCommand, 
     isProcessing, 
@@ -335,7 +424,7 @@ function AppContent() {
   console.log('Current conversation history:', conversationHistory);
   
   const [message, setMessage] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Default open on desktop
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -376,68 +465,69 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <header className="border-b bg-background/95 backdrop-blur-sm sticky top-0 z-40">
-          <div className="px-4 py-3">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden"
-                >
-                  <Menu className="h-4 w-4" />
-                </Button>
-                <div className="p-2 bg-primary/10 rounded-lg">
-                  <BarChart3 className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <h1 className="text-lg font-semibold">Data Explorer</h1>
-                  <p className="text-xs text-muted-foreground">AI-Powered Analytics</p>
-                </div>
+    <div className="min-h-screen bg-background">
+      {/* Unified Header */}
+      <header className="border-b bg-background/95 backdrop-blur-sm sticky top-0 z-50">
+        <div className="px-4 py-3">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center space-x-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <BarChart3 className="h-5 w-5 text-primary" />
               </div>
-              
-              <div className="flex items-center space-x-2">
-                {dataInfo && (
-                  <>
-                    <Badge variant="outline" className="text-xs">
-                      {dataInfo.shape[0].toLocaleString()} rows
-                    </Badge>
-                    <Link href="/visualizations">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs"
-                      >
-                        <BarChart className="h-3 w-3 mr-1" />
-                        Visualizations
-                      </Button>
-                    </Link>
+              <div>
+                <h1 className="text-lg font-semibold">Data Explorer</h1>
+                <p className="text-xs text-muted-foreground">AI-Powered Analytics</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              {dataInfo && (
+                <>
+                  <Badge variant="outline" className="text-xs">
+                    {dataInfo.shape[0].toLocaleString()} rows
+                  </Badge>
+                  <Link href="/visualizations">
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={resetSession}
                       className="text-xs"
                     >
-                      <Trash2 className="h-3 w-3 mr-1" />
-                      New Chat
+                      <BarChart className="h-3 w-3 mr-1" />
+                      Visualizations
                     </Button>
-                  </>
-                )}
-              </div>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetSession}
+                    className="text-xs"
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    New Chat
+                  </Button>
+                </>
+              )}
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Main Chat Area */}
-        <main className="flex-1 flex flex-col">
+      {/* Main Layout */}
+      <div className="flex">
+        {/* Sidebar */}
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col min-h-0 max-w-full overflow-hidden">
+          {/* Main Chat Area */}
+          <main className="flex-1 flex flex-col">
         {!dataInfo ? (
           // Welcome State
           <div className="flex-1 flex items-center justify-center p-6">
@@ -458,7 +548,7 @@ function AppContent() {
           </div>
         ) : (
           // Chat Interface
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {/* Messages Area */}
             <ScrollArea className="flex-1 p-6">
               <div className="space-y-6">
@@ -466,7 +556,7 @@ function AppContent() {
                   <div className="text-center py-8">
                     <div className="p-4 bg-primary/10 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
                       <Bot className="h-8 w-8 text-primary" />
-                    </div>
+        </div>
                     <h3 className="text-lg font-semibold mb-2">Hello! I&apos;m your Data Assistant</h3>
                     <p className="text-muted-foreground mb-6">
                       I can help you analyze your data. Try asking me things like:
@@ -509,6 +599,7 @@ function AppContent() {
                       suggestions={entry.suggestions}
                       onSuggestionClick={handleSuggestionClick}
                       data={index === conversationHistory.length - 1 ? currentData : undefined}
+                      charts={index === conversationHistory.length - 1 ? currentCharts || undefined : undefined}
                     />
                   </div>
                 ))}
@@ -607,8 +698,9 @@ function AppContent() {
               )}
             </div>
           </div>
-        )}
-        </main>
+          )}
+          </main>
+        </div>
       </div>
     </div>
   );
