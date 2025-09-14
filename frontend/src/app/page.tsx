@@ -19,7 +19,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
 // Chat Message Component
-function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClick, data, charts }: {
+function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClick, data, charts, onShowDataModal, onShowChartsModal }: {
   message: string;
   isUser: boolean;
   timestamp: string;
@@ -27,6 +27,8 @@ function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClic
   onSuggestionClick?: (suggestion: { type: string; description: string; operation: Record<string, unknown> }) => void;
   data?: Record<string, unknown>[];
   charts?: Record<string, string>;
+  onShowDataModal?: () => void;
+  onShowChartsModal?: () => void;
 }) {
   return (
     <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'} mb-6`}>
@@ -59,10 +61,7 @@ function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClic
                                 variant="outline"
                                 size="sm"
                                 className="h-6 text-xs"
-                                onClick={() => {
-                                  // Navigate to visualizations page for full data view
-                                  window.open('/visualizations', '_blank');
-                                }}
+                                onClick={() => onShowDataModal?.()}
                               >
                                 View Full Data
                               </Button>
@@ -123,10 +122,7 @@ function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClic
                               variant="outline"
                               size="sm"
                               className="h-6 text-xs"
-                              onClick={() => {
-                                // Navigate to visualizations page for full chart view
-                                window.open('/visualizations', '_blank');
-                              }}
+                              onClick={() => onShowChartsModal?.()}
                             >
                               <BarChart className="h-3 w-3 mr-1" />
                               View All Charts
@@ -292,25 +288,89 @@ function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) 
                 <CardContent className="p-4">
                   <h3 className="font-medium mb-3 flex items-center">
                     <BarChart3 className="h-4 w-4 mr-2" />
-                    Dataset Info
+                    Dataset Analysis
                   </h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Rows:</span>
-                      <span className="font-medium">{dataInfo.shape[0].toLocaleString()}</span>
+                  <div className="space-y-4 text-sm">
+                    {/* Dataset Overview */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-medium text-foreground">Dataset Overview</h4>
+                      <div className="space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Records:</span>
+                          <span className="font-medium">{dataInfo.shape[0].toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Features:</span>
+                          <span className="font-medium">{dataInfo.shape[1]}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Columns:</span>
-                      <span className="font-medium">{dataInfo.shape[1]}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Numeric:</span>
-                      <span className="font-medium">{dataInfo.numeric_columns.length}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Categorical:</span>
-                      <span className="font-medium">{dataInfo.categorical_columns.length}</span>
-                    </div>
+
+                    {/* Practical Analytics */}
+                    {currentData && currentData.length > 0 && (
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-medium text-foreground">Key Insights</h4>
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Records:</span>
+                            <span className="font-medium">{currentData.length}</span>
+                          </div>
+                          {dataInfo.columns?.includes('gross_revenue') && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Total Revenue:</span>
+                                <span className="font-medium text-green-600">
+                                  ${currentData.reduce((sum, d) => sum + (Number(d.gross_revenue) || 0), 0).toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Avg Order Value:</span>
+                                <span className="font-medium text-green-600">
+                                  ${Math.round(currentData.reduce((sum, d) => sum + (Number(d.gross_revenue) || 0), 0) / currentData.length).toLocaleString()}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                          {dataInfo.columns?.includes('gross_revenue') && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Revenue Range:</span>
+                              <span className="font-medium text-xs">
+                                ${Math.min(...currentData.map(d => Number(d.gross_revenue) || 0)).toLocaleString()} - ${Math.max(...currentData.map(d => Number(d.gross_revenue) || 0)).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                          {dataInfo.columns?.includes('region') && currentData.length > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Top Region:</span>
+                              <span className="font-medium text-blue-600">
+                                {(() => {
+                                  const regionCounts = currentData.reduce((acc: Record<string, number>, d) => {
+                                    acc[d.region as string] = (acc[d.region as string] || 0) + 1;
+                                    return acc;
+                                  }, {});
+                                  return Object.entries(regionCounts).sort(([,a], [,b]) => (b as number) - (a as number))[0]?.[0] || 'N/A';
+                                })()}
+                              </span>
+                            </div>
+                          )}
+                          {dataInfo.columns?.includes('product_name') && currentData.length > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Top Product:</span>
+                              <span className="font-medium text-blue-600">
+                                {(() => {
+                                  const productCounts = currentData.reduce((acc: Record<string, number>, d) => {
+                                    acc[d.product_name as string] = (acc[d.product_name as string] || 0) + 1;
+                                    return acc;
+                                  }, {});
+                                  return Object.entries(productCounts).sort(([,a], [,b]) => (b as number) - (a as number))[0]?.[0]?.substring(0, 15) + '...' || 'N/A';
+                                })()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 </CardContent>
               </Card>
@@ -425,6 +485,8 @@ function AppContent() {
   
   const [message, setMessage] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true); // Default open on desktop
+  const [showDataModal, setShowDataModal] = useState(false);
+  const [showChartsModal, setShowChartsModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -600,6 +662,8 @@ function AppContent() {
                       onSuggestionClick={handleSuggestionClick}
                       data={index === conversationHistory.length - 1 ? currentData : undefined}
                       charts={index === conversationHistory.length - 1 ? currentCharts || undefined : undefined}
+                      onShowDataModal={() => setShowDataModal(true)}
+                      onShowChartsModal={() => setShowChartsModal(true)}
                     />
                   </div>
                 ))}
@@ -702,6 +766,92 @@ function AppContent() {
           </main>
         </div>
       </div>
+
+      {/* Data Modal */}
+      {showDataModal && currentData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg shadow-xl w-full max-w-7xl h-[90vh] flex flex-col">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Full Data View</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDataModal(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <div className="overflow-auto h-full">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/30 sticky top-0 z-10">
+                    <tr>
+                      {Object.keys(currentData[0]).map((key) => (
+                        <th key={key} className="px-3 py-2 text-left font-medium text-muted-foreground border-r">
+                          {key}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentData.map((row, index) => (
+                      <tr key={index} className="border-b hover:bg-muted/20">
+                        {Object.keys(row).map((key) => (
+                          <td key={key} className="px-3 py-2 text-xs border-r" title={String(row[key])}>
+                            {String(row[key])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Charts Modal */}
+      {showChartsModal && currentCharts && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg shadow-xl w-full max-w-7xl h-[90vh] flex flex-col">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="text-lg font-semibold">All Charts & Visualizations</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowChartsModal(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {Object.entries(currentCharts).map(([chartType, chartData]) => (
+                  <div key={chartType} className="bg-muted/20 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium capitalize">{chartType} Chart</h4>
+                    </div>
+                    <div className="w-full h-64">
+                      <Plot
+                        data={JSON.parse(chartData).data}
+                        layout={{
+                          ...JSON.parse(chartData).layout,
+                          autosize: true,
+                          margin: { l: 40, r: 40, t: 40, b: 40 },
+                          showlegend: false
+                        }}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: '100%', height: '100%' }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -223,6 +223,8 @@ async def process_command(session_id: str, command_data: Dict[str, str]):
                 df_result = session["data_ops"].sort_data(**operation_params)
             elif operation_type == 'pivot':
                 df_result = session["data_ops"].pivot_table(**operation_params)
+            elif operation_type == 'correlation':
+                df_result = session["data_ops"].correlation_analysis(**operation_params)
             else:
                 df_result = session["data_ops"].df
             

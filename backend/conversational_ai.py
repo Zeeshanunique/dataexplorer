@@ -42,6 +42,7 @@ class ConversationalAI:
             
             # Parse the response
             ai_response = response.choices[0].message.content
+            print(f"AI Response for '{command}': {ai_response}")
             parsed_response = self._parse_ai_response(ai_response, command)
             
             # Add to conversation history
@@ -138,6 +139,13 @@ class ConversationalAI:
 - "pivot sales by region and quarter" → {"index": "region", "columns": "quarter", "values": "sales", "aggfunc": "sum"}
 - "create a pivot of revenue by product and channel" → {"index": "product", "columns": "channel", "values": "revenue", "aggfunc": "sum"}
 
+### 6. CORRELATION - Analyze correlation between columns
+**Parameters:** {"columns": ["col1", "col2"], "method": "pearson|spearman|kendall"}
+**Use for:** Correlation analysis, relationship discovery, dependency analysis
+**Examples:**
+- "correlation between discount and sales" → {"columns": ["discount_pct", "units_sold"], "method": "pearson"}
+- "analyze relationship between price and revenue" → {"columns": ["unit_price", "gross_revenue"], "method": "pearson"}
+
 ## RESPONSE FORMAT:
 Respond with ONLY a JSON object containing:
 - **operation_type**: One of the above operations (or null if unclear)
@@ -152,6 +160,8 @@ Respond with ONLY a JSON object containing:
 - Explain what the results will show and why it's useful
 - Use specific column names and values from the user's query
 - Make it sound like a helpful business analyst, not a technical system
+- ALWAYS generate unique, contextual explanations that directly respond to the specific query
+- NEVER use generic responses - each explanation should be tailored to the exact question asked
 
 ## INTELLIGENT ANALYSIS:
 - **Context Awareness**: Use column names and data types from the dataset
@@ -241,7 +251,11 @@ Respond with a JSON object following the specified format."""
         confidence = parsed_response.get('confidence', 0.0)
         operation_params = parsed_response.get('operation_params', {})
         
-        # Create contextual responses based on the user's actual query
+        # Use the AI's explanation if it exists and is meaningful
+        if explanation and len(explanation.strip()) > 20:
+            return explanation
+        
+        # Fallback to contextual responses only if AI didn't provide a good explanation
         command_lower = original_command.lower()
         
         if operation_type == 'top_n':

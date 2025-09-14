@@ -145,6 +145,61 @@ class DataOperations:
         except Exception as e:
             return self.df
     
+    def correlation_analysis(self, columns: List[str], method: str = "pearson") -> pd.DataFrame:
+        """Analyze correlation between specified columns"""
+        try:
+            # Select only numeric columns for correlation
+            numeric_cols = [col for col in columns if col in self.df.columns and pd.api.types.is_numeric_dtype(self.df[col])]
+            
+            if len(numeric_cols) < 2:
+                raise ValueError("At least 2 numeric columns required for correlation analysis")
+            
+            # Calculate correlation matrix
+            corr_matrix = self.df[numeric_cols].corr(method=method)
+            
+            # Create a results DataFrame with correlation pairs
+            results = []
+            for i, col1 in enumerate(numeric_cols):
+                for j, col2 in enumerate(numeric_cols):
+                    if i < j:  # Only upper triangle to avoid duplicates
+                        results.append({
+                            'column_1': col1,
+                            'column_2': col2,
+                            'correlation': corr_matrix.loc[col1, col2],
+                            'strength': self._interpret_correlation(corr_matrix.loc[col1, col2])
+                        })
+            
+            # Sort by absolute correlation value
+            results_df = pd.DataFrame(results)
+            results_df = results_df.reindex(results_df['correlation'].abs().sort_values(ascending=False).index)
+            
+            # Add to operation history
+            self.operation_history.append({
+                "operation": "correlation_analysis",
+                "parameters": {"columns": columns, "method": method},
+                "description": f"Correlation analysis between {', '.join(columns)} using {method} method"
+            })
+            
+            return results_df
+            
+        except Exception as e:
+            print(f"Correlation analysis error: {e}")
+            return pd.DataFrame()
+    
+    def _interpret_correlation(self, corr_value: float) -> str:
+        """Interpret correlation strength"""
+        abs_corr = abs(corr_value)
+        if abs_corr >= 0.9:
+            return "Very Strong"
+        elif abs_corr >= 0.7:
+            return "Strong"
+        elif abs_corr >= 0.5:
+            return "Moderate"
+        elif abs_corr >= 0.3:
+            return "Weak"
+        else:
+            return "Very Weak"
+    
     def get_data_info(self) -> Dict[str, Any]:
         """Get information about current data"""
         return {
