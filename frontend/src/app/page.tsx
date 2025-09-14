@@ -1,14 +1,18 @@
 'use client';
 
-import { Upload, BarChart3, Send, Bot, User, Trash2, Download as DownloadIcon } from 'lucide-react';
+import { Upload, BarChart3, Send, Bot, User, Trash2, Download as DownloadIcon, Menu, X, History, Image, Plus, BarChart } from 'lucide-react';
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import FileUpload from '@/components/FileUpload';
-import { DataExplorerProvider, useDataExplorer } from '@/context/DataExplorerContext';
+import { useDataExplorer } from '@/context/DataExplorerContext';
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 
 // Chat Message Component
 function ChatMessage({ message, isUser, timestamp, suggestions, onSuggestionClick, data }: {
@@ -136,6 +140,182 @@ function TypingIndicator() {
   );
 }
 
+// Sidebar Component
+function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { 
+    dataInfo, 
+    conversationHistory, 
+    currentData,
+    resetSession,
+    exportData 
+  } = useDataExplorer();
+
+  return (
+    <>
+      {/* Overlay for mobile */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div className={`
+        fixed lg:static inset-y-0 left-0 z-50 w-80 bg-background border-r
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        flex flex-col
+      `}>
+        {/* Sidebar Header */}
+        <div className="p-4 border-b">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Data Explorer</h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="lg:hidden"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Sidebar Content */}
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-6">
+            {/* New Chat Button */}
+            <Button
+              onClick={() => {
+                resetSession();
+                onClose();
+              }}
+              className="w-full"
+              variant="outline"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Chat
+            </Button>
+
+            {/* Data Info */}
+            {dataInfo && (
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="font-medium mb-3 flex items-center">
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Dataset Info
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Rows:</span>
+                      <span className="font-medium">{dataInfo.shape[0].toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Columns:</span>
+                      <span className="font-medium">{dataInfo.shape[1]}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Numeric:</span>
+                      <span className="font-medium">{dataInfo.numeric_columns.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Categorical:</span>
+                      <span className="font-medium">{dataInfo.categorical_columns.length}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Chat History */}
+            {conversationHistory.length > 0 && (
+              <div>
+                <h3 className="font-medium mb-3 flex items-center">
+                  <History className="h-4 w-4 mr-2" />
+                  Chat History
+                </h3>
+                <div className="space-y-2">
+                  {conversationHistory.map((entry, index) => (
+                    <div
+                      key={index}
+                      className="p-3 rounded-lg bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
+                    >
+                      <p className="text-sm font-medium truncate">
+                        {entry.user_command}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(entry.timestamp).toLocaleTimeString([], { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Visualizations */}
+            {currentData.length > 0 && (
+              <div>
+                  <h3 className="font-medium mb-3 flex items-center">
+                    <Image className="h-4 w-4 mr-2" />
+                    Current View
+                  </h3>
+                <div className="space-y-2">
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="text-sm font-medium">Data Table</p>
+                    <p className="text-xs text-muted-foreground">
+                      {currentData.length} rows displayed
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Visualizations */}
+            {dataInfo && (
+              <div>
+                <h3 className="font-medium mb-3">Visualizations</h3>
+                <div className="space-y-2">
+                  <Link href="/visualizations">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start"
+                    >
+                      <BarChart className="h-4 w-4 mr-2" />
+                      View Charts & Graphs
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Export Options */}
+            {dataInfo && (
+              <div>
+                <h3 className="font-medium mb-3">Export</h3>
+                <div className="space-y-2">
+                  <Button
+                    onClick={() => exportData('csv')}
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                  >
+                    <DownloadIcon className="h-4 w-4 mr-2" />
+                    Export as CSV
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    </>
+  );
+}
 
 // Main App Component - ChatGPT-like Interface
 function AppContent() {
@@ -155,6 +335,7 @@ function AppContent() {
   console.log('Current conversation history:', conversationHistory);
   
   const [message, setMessage] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -195,45 +376,68 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <BarChart3 className="h-5 w-5 text-primary" />
+    <div className="min-h-screen bg-background flex">
+      {/* Sidebar */}
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <header className="border-b bg-background/95 backdrop-blur-sm sticky top-0 z-40">
+          <div className="px-4 py-3">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSidebarOpen(true)}
+                  className="lg:hidden"
+                >
+                  <Menu className="h-4 w-4" />
+                </Button>
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <BarChart3 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold">Data Explorer</h1>
+                  <p className="text-xs text-muted-foreground">AI-Powered Analytics</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-lg font-semibold">Data Explorer</h1>
-                <p className="text-xs text-muted-foreground">AI-Powered Analytics</p>
+              
+              <div className="flex items-center space-x-2">
+                {dataInfo && (
+                  <>
+                    <Badge variant="outline" className="text-xs">
+                      {dataInfo.shape[0].toLocaleString()} rows
+                    </Badge>
+                    <Link href="/visualizations">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                      >
+                        <BarChart className="h-3 w-3 mr-1" />
+                        Visualizations
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetSession}
+                      className="text-xs"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      New Chat
+                    </Button>
+                  </>
+                )}
               </div>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              {dataInfo && (
-                <>
-                  <Badge variant="outline" className="text-xs">
-                    {dataInfo.shape[0].toLocaleString()} rows
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={resetSession}
-                    className="text-xs"
-                  >
-                    <Trash2 className="h-3 w-3 mr-1" />
-                    New Chat
-                  </Button>
-                </>
-              )}
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
+        {/* Main Chat Area */}
+        <main className="flex-1 flex flex-col">
         {!dataInfo ? (
           // Welcome State
           <div className="flex-1 flex items-center justify-center p-6">
@@ -404,15 +608,12 @@ function AppContent() {
             </div>
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
 
 export default function Home() {
-  return (
-    <DataExplorerProvider>
-      <AppContent />
-    </DataExplorerProvider>
-  );
+  return <AppContent />;
 }

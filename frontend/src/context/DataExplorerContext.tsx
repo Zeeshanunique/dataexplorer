@@ -77,8 +77,9 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
   const [error, setError] = useState<string | null>(null);
   
   // Store original data for session recovery
-  const [originalData, setOriginalData] = useState<Record<string, unknown>[]>([]);
-  const [originalDataInfo, setOriginalDataInfo] = useState<DataInfo | null>(null);
+  // Store original data for session recovery (future feature)
+  // const [originalData, setOriginalData] = useState<Record<string, unknown>[]>([]);
+  // const [originalDataInfo, setOriginalDataInfo] = useState<DataInfo | null>(null);
 
   const createSession = useCallback(async () => {
     try {
@@ -446,7 +447,7 @@ export function DataExplorerProvider({ children }: { children: React.ReactNode }
     } finally {
       setIsProcessing(false);
     }
-  }, [sessionId]);
+  }, [sessionId, createSession]);
 
   const clearConversation = useCallback(() => {
     setConversationHistory([]);
